@@ -21,7 +21,7 @@ DEFAULT_MODEL = "gpt-4.1-mini"
 
 # Keep this True to run without paid OpenAI API usage.
 # Change it to False later when API billing is available.
-USE_MOCK_LLM = True
+USE_MOCK_LLM = False
 
 
 def llm_error_response(
@@ -159,9 +159,7 @@ def mock_recommendation_response() -> dict[str, Any]:
 
 
 def call_llm(prompt: str | list[dict[str, str]]) -> dict[str, Any]:
-    """
-    Adapter for app.py — accept a prompt string or chat messages.
-    """
+    """Adapter for app.py — accept a prompt string or chat messages."""
     if isinstance(prompt, str):
         messages = [{"role": "user", "content": prompt}]
     else:
