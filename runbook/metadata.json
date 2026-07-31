@@ -1,0 +1,17 @@
+[
+  {
+    "name": "idle-ec2",
+    "path": "runbook/idle-ec2.md",
+    "keywords": ["idle", "ec2", "stop", "cpu", "underused", "vm", "instance"]
+  },
+  {
+    "name": "cost-optimization",
+    "path": "runbook/cost-optimization.md",
+    "keywords": ["cost", "save", "optimize", "billing", "waste", "budget"]
+  },
+  {
+    "name": "production-safety",
+    "path": "runbook/production-safety.md",
+    "keywords": ["production", "prod", "delete", "terminate", "risk", "approval"]
+  }
+]

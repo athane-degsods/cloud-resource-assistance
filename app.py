@@ -15,10 +15,10 @@ from datetime import datetime, timezone
 from flask import Flask, jsonify, request
 
 from modules.ec2_processor import process_ec2
-from modules.filter_request import filter_and_request
+from modules.request_filter import filter_and_request
 from modules.json_handler import handle_json
 from modules.llm_server import call_llm
-from modules.prompt_crafting import craft_prompt
+from modules.prompt_crafter import craft_prompt
 from modules.string_breakdown import breakdown
 
 app = Flask(__name__)
@@ -67,18 +67,18 @@ def process_request(message: str) -> dict:
 
     # 2–6: string breakdown → filter runbooks
     words = breakdown(message)
-    _log_step("string_breakdown", f"words={len(words)}")
+    _log_step("string_breakdown", f"words={words}")
 
     documents = filter_and_request(words)
-    _log_step("filter_and_request", f"docs={len(documents)}")
+    _log_step("filter_and_request", f"paths={documents}")
 
-    # 7–10: EC2 data
-    ec2_records = process_ec2(request_hint=message)
-    _log_step("ec2_processor", f"records={len(ec2_records)}")
+    # 7–10: EC2 data (ingestor → pass-through for now)
+    ec2_text = process_ec2(request_hint=message)
+    _log_step("ec2_processor", f"ec2_text_len={len(ec2_text)}")
 
     # 11–12: prompt
-    prompt = craft_prompt(message, documents, ec2_records)
-    _log_step("prompt_crafting", f"prompt_len={len(prompt)}")
+    prompt = craft_prompt(message, documents, ec2_text)
+    _log_step("prompt_crafter", f"prompt_len={len(prompt)}")
 
     # 13–14: LLM
     model_json = call_llm(prompt)
@@ -92,10 +92,13 @@ def process_request(message: str) -> dict:
         "readable_response": readable,
         "model_response": model_json,
         "pii_warning": warning,
+        "words": words,
+        "paths": documents,
+        "ec2_text": ec2_text,
         "meta": {
             "word_count": len(words),
             "document_count": len(documents),
-            "ec2_record_count": len(ec2_records),
+            "ec2_text_len": len(ec2_text),
         },
     }
 

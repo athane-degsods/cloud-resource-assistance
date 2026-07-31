@@ -25,11 +25,13 @@ def contains_sensitive_data(text: str) -> bool:
 
 def craft_prompt(
     user_request: str,
-    documents: list[dict[str, Any]],
-    ec2_records: list[dict[str, Any]],
+    documents: list[Any] | None,
+    ec2_records: Any,
 ) -> list[dict[str, str]]:
     """
     Create the system and user messages sent to the LLM.
+    documents: runbook paths (or doc dicts)
+    ec2_records: EC2 text document (str) or structured records
     """
 
     if not user_request or not user_request.strip():
