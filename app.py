@@ -42,9 +42,7 @@ action_log: list[dict[str, Any]] = []
 
 
 def _log_step(step: str, detail: str = "") -> None:
-    """
-    Add one pipeline activity to the action log.
-    """
+    """Add one pipeline activity to the action log."""
     entry = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "step": step,
@@ -56,11 +54,7 @@ def _log_step(step: str, detail: str = "") -> None:
 
 
 def _pii_warning(message: str) -> str | None:
-    """
-    Perform a lightweight private-information check.
-
-    The prompt crafter performs additional credential-pattern checks.
-    """
+    """Perform a lightweight private-information check."""
     markers = [
         "ssn",
         "password",
@@ -89,9 +83,7 @@ def _safe_processing_error(
     summary: str,
     warning: str | None = None,
 ) -> dict[str, Any]:
-    """
-    Create a consistent safe response when processing fails.
-    """
+    """Create a consistent safe response when processing fails."""
     return {
         "recommendation": {
             "status": status,
@@ -110,9 +102,7 @@ def _safe_processing_error(
 
 
 def process_request(message: str) -> dict[str, Any]:
-    """
-    Route one user request through the complete application pipeline.
-    """
+    """Route one user request through the complete pipeline."""
     _log_step("request_received", message[:200])
 
     warning = _pii_warning(message)
@@ -120,7 +110,7 @@ def process_request(message: str) -> dict[str, Any]:
     if warning:
         _log_step("pii_warning", warning)
 
-    # Step 1: Break the user request into searchable words.
+    # Step 1: Break the request into searchable words.
     try:
         words = breakdown(message)
     except Exception as exc:
@@ -155,7 +145,7 @@ def process_request(message: str) -> dict[str, Any]:
         f"docs={len(documents)}",
     )
 
-    # Step 3: Obtain cleaned EC2 data.
+    # Step 3: Obtain cleaned EC2 records.
     try:
         ec2_records = process_ec2(request_hint=message)
     except Exception as exc:
@@ -170,7 +160,7 @@ def process_request(message: str) -> dict[str, Any]:
         f"records={len(ec2_records)}",
     )
 
-    # Step 4: Build the secure system and user messages.
+    # Step 4: Build secure prompt messages.
     try:
         prompt_messages = craft_prompt(
             user_request=message,
@@ -225,16 +215,13 @@ def process_request(message: str) -> dict[str, Any]:
         f"message_count={len(prompt_messages)}",
     )
 
-    # Step 5: Call the mock or live LLM.
+    # Step 5: Call mock or live LLM.
     model_json = call_llm(prompt_messages)
 
     if isinstance(model_json, dict):
-        llm_status = model_json.get("status", "unknown")
-        model_keys = list(model_json.keys())
-
         _log_step(
             "llm_server",
-            f"status={llm_status}, keys={model_keys}",
+            f"status={model_json.get('status', 'unknown')}",
         )
     else:
         _log_step(
@@ -242,7 +229,7 @@ def process_request(message: str) -> dict[str, Any]:
             "invalid non-dictionary response",
         )
 
-    # Step 6: Validate the model output.
+    # Step 6: Validate and normalize model output.
     validated_response = handle_model_response(model_json)
 
     _log_step(
@@ -270,7 +257,7 @@ def chat():
     JSON body:
     {
         "message": "Help me reduce cost from idle EC2 instances",
-        "action": "approve | edit | reject"  # optional
+        "action": "approve | edit | reject"
     }
     """
     body = request.get_json(silent=True) or {}
@@ -321,9 +308,7 @@ def chat():
 
 @app.get("/health")
 def health():
-    """
-    Health-check endpoint.
-    """
+    """Health-check endpoint."""
     return jsonify(
         {
             "status": "ok",
@@ -333,9 +318,7 @@ def health():
 
 @app.get("/logs")
 def logs():
-    """
-    Return the in-memory action log.
-    """
+    """Return the in-memory action log."""
     return jsonify(
         {
             "logs": action_log,
