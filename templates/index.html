@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cloud Assistant</title>
+</head>
+
+<body>
+
+    <h2>Cloud Assistant</h2>
+
+    <input
+        type="text"
+        id="message"
+        placeholder="Enter your request"
+    />
+
+    <button id="sendBtn">
+        Send
+    </button>
+
+    <hr>
+
+    <h3>Log</h3>
+
+    <div id="log"></div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+
+</body>
+</html>

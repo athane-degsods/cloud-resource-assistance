@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 
 from modules.ec2_processor import process_ec2
 from modules.request_filter import filter_and_request
@@ -101,6 +101,12 @@ def process_request(message: str) -> dict:
             "ec2_text_len": len(ec2_text),
         },
     }
+
+
+@app.get("/")
+def index():
+    """Serve the HTML chat page."""
+    return render_template("index.html")
 
 
 @app.post("/chat")
