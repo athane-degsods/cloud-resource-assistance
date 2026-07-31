@@ -4,6 +4,8 @@ import os
 from typing import Any
 
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
 from openai import (
     APIConnectionError,
     APIStatusError,
@@ -13,27 +15,29 @@ from openai import (
     RateLimitError,
 )
 
-load_dotenv(override=True)
+# Do not override environment variables supplied by tests or the shell.
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gpt-4.1-mini"
+DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
-# Controlled through the local .env file:
-# USE_MOCK_LLM=true  -> return hardcoded mock recommendations
-# USE_MOCK_LLM=false -> call the real LLM API
 USE_MOCK_LLM = (
     os.getenv("USE_MOCK_LLM", "true").strip().lower() == "true"
 )
+
+LLM_PROVIDER = os.getenv(
+    "LLM_PROVIDER",
+    "gemini",
+).strip().lower()
 
 
 def llm_error_response(
     message: str,
     error_type: str = "llm_error",
 ) -> dict[str, Any]:
-    """
-    Return a consistent and safe response when an LLM request fails.
-    """
+    """Return a consistent safe error response."""
     return {
         "status": error_type,
         "summary": message,
@@ -44,9 +48,7 @@ def llm_error_response(
 
 
 def mock_recommendation_response() -> dict[str, Any]:
-    """
-    Return a realistic mock response for local development and demos.
-    """
+    """Return a fixed response for local development and tests."""
     return {
         "status": "success",
         "summary": (
@@ -100,22 +102,17 @@ def mock_recommendation_response() -> dict[str, Any]:
                 ),
                 "evidence": [
                     "CPU utilization is consistently low.",
-                    "The current workload may not require the existing capacity.",
                 ],
                 "steps": [
                     "Review memory and disk utilization.",
-                    "Check the runbook for approved instance types.",
                     "Select a smaller instance type.",
-                    "Schedule a maintenance period.",
                     "Approve the mock resize action.",
                 ],
                 "pros": [
-                    "Reduces cost without permanently stopping the service.",
-                    "Maintains a running compute resource.",
+                    "Reduces cost without stopping the service.",
                 ],
                 "cons": [
                     "The smaller instance may have insufficient capacity.",
-                    "Resizing may require a restart.",
                 ],
                 "requires_approval": True,
                 "mock_action": {
@@ -125,29 +122,25 @@ def mock_recommendation_response() -> dict[str, Any]:
             },
             {
                 "id": "path_3",
-                "title": "Continue monitoring before making a change",
+                "title": "Continue monitoring",
                 "risk": "low",
                 "recommended": False,
                 "reason": (
-                    "Additional metric history can reduce uncertainty "
-                    "before changing the resource."
+                    "Additional metric history can reduce uncertainty."
                 ),
                 "evidence": [
-                    "Only 24 hours of average metric data is currently available.",
+                    "Only 24 hours of metric data is currently available.",
                 ],
                 "steps": [
-                    "Collect CPU and network metrics for seven days.",
-                    "Check for scheduled or periodic workloads.",
-                    "Review weekday and weekend usage.",
-                    "Reevaluate the instance after collecting more evidence.",
+                    "Collect metrics for seven days.",
+                    "Review CPU and network trends.",
+                    "Reevaluate the resource.",
                 ],
                 "pros": [
                     "Avoids an immediate operational change.",
-                    "Provides more evidence for the final decision.",
                 ],
                 "cons": [
-                    "The existing cost continues during monitoring.",
-                    "Cost savings are delayed.",
+                    "The current cost continues.",
                 ],
                 "requires_approval": True,
                 "mock_action": {
@@ -159,29 +152,185 @@ def mock_recommendation_response() -> dict[str, Any]:
     }
 
 
-def generate_recommendations(
+def _messages_to_gemini_prompt(
+    messages: list[dict[str, str]],
+) -> tuple[str, str]:
+    """Separate system instructions from user content."""
+    system_parts: list[str] = []
+    user_parts: list[str] = []
+
+    for message in messages:
+        role = str(message.get("role", "")).strip().lower()
+        content = str(message.get("content", "")).strip()
+
+        if not content:
+            continue
+
+        if role == "system":
+            system_parts.append(content)
+        else:
+            user_parts.append(content)
+
+    return (
+        "\n\n".join(system_parts),
+        "\n\n".join(user_parts),
+    )
+
+
+def _remove_code_fences(text: str) -> str:
+    """Remove accidental Markdown fences before JSON parsing."""
+    cleaned = text.strip()
+
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    elif cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+
+    return cleaned.strip()
+
+
+def _parse_json_response(
+    content: str,
+    provider_name: str,
+) -> dict[str, Any]:
+    """Parse and validate a provider response as a JSON object."""
+    if not content or not content.strip():
+        return llm_error_response(
+            f"The {provider_name} model returned an empty response.",
+            "empty_response",
+        )
+
+    try:
+        parsed = json.loads(_remove_code_fences(content))
+    except json.JSONDecodeError:
+        logger.error("%s returned invalid JSON", provider_name)
+
+        return llm_error_response(
+            f"The {provider_name} service returned invalid JSON.",
+            "invalid_json",
+        )
+
+    if not isinstance(parsed, dict):
+        return llm_error_response(
+            f"The {provider_name} response was not a JSON object.",
+            "invalid_json",
+        )
+
+    return parsed
+
+
+def _call_gemini(
     messages: list[dict[str, str]],
 ) -> dict[str, Any]:
-    """
-    Generate cloud-resource recommendations.
+    """Send crafted messages to Gemini and return parsed JSON."""
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    model = os.getenv(
+        "GEMINI_MODEL",
+        os.getenv("LLM_MODEL", DEFAULT_GEMINI_MODEL),
+    ).strip()
 
-    In mock mode, return a predefined response.
-
-    In live mode, send the crafted chat messages to the OpenAI API
-    and return the parsed JSON response.
-    """
-    if not messages:
+    if not api_key:
         return llm_error_response(
-            "No messages were supplied to the LLM.",
+            "GEMINI_API_KEY is not configured.",
+            "configuration_error",
+        )
+
+    system_instruction, user_content = _messages_to_gemini_prompt(
+        messages
+    )
+
+    if not user_content:
+        return llm_error_response(
+            "No user content was supplied to Gemini.",
             "validation_error",
         )
 
-    if USE_MOCK_LLM:
-        logger.info("Using mock LLM response")
-        return mock_recommendation_response()
+    try:
+        client = genai.Client(api_key=api_key)
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    model = os.getenv("LLM_MODEL", DEFAULT_MODEL)
+        config_arguments: dict[str, Any] = {
+            "temperature": 0.1,
+            "response_mime_type": "application/json",
+        }
+
+        if system_instruction:
+            config_arguments["system_instruction"] = system_instruction
+
+        response = client.models.generate_content(
+            model=model,
+            contents=user_content,
+            config=types.GenerateContentConfig(
+                **config_arguments
+            ),
+        )
+
+        return _parse_json_response(
+            response.text or "",
+            "Gemini",
+        )
+
+    except Exception as exc:
+        # This logs the useful error in the server terminal.
+        # It does not return credentials to the user.
+        logger.exception(
+            "Gemini request failed: %s",
+            str(exc),
+        )
+
+        error_text = str(exc).lower()
+
+        if (
+            "api key not valid" in error_text
+            or "invalid api key" in error_text
+            or "unauthenticated" in error_text
+        ):
+            return llm_error_response(
+                "The Gemini recommendation service authentication failed.",
+                "authentication_error",
+            )
+
+        if "quota" in error_text or "resource_exhausted" in error_text:
+            return llm_error_response(
+                "The Gemini API quota is unavailable or exhausted.",
+                "quota_error",
+            )
+
+        if "429" in error_text or "rate limit" in error_text:
+            return llm_error_response(
+                "The Gemini service is temporarily rate limited.",
+                "rate_limit_error",
+            )
+
+        if "not found" in error_text or "404" in error_text:
+            return llm_error_response(
+                (
+                    f"The configured Gemini model '{model}' "
+                    "was not found or is unavailable."
+                ),
+                "model_error",
+            )
+
+        return llm_error_response(
+            (
+                "The Gemini recommendation service request failed. "
+                "Check the server logs for details."
+            ),
+            "api_error",
+        )
+
+
+def _call_openai(
+    messages: list[dict[str, str]],
+) -> dict[str, Any]:
+    """Send crafted messages to OpenAI and return parsed JSON."""
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    model = os.getenv(
+        "OPENAI_MODEL",
+        os.getenv("LLM_MODEL", DEFAULT_OPENAI_MODEL),
+    ).strip()
 
     if not api_key:
         return llm_error_response(
@@ -196,122 +345,124 @@ def generate_recommendations(
     )
 
     try:
-        logger.info(
-            "Sending cloud recommendation request to model %s",
-            model,
-        )
-
         response = client.chat.completions.create(
             model=model,
             messages=messages,
             temperature=0.1,
-            response_format={"type": "json_object"},
+            response_format={
+                "type": "json_object",
+            },
         )
 
-        content = response.choices[0].message.content
+        content = response.choices[0].message.content or ""
 
-        if not content:
-            return llm_error_response(
-                "The model returned an empty response.",
-                "empty_response",
-            )
-
-        parsed_response = json.loads(content)
-
-        if not isinstance(parsed_response, dict):
-            return llm_error_response(
-                "The model response was not a JSON object.",
-                "invalid_json",
-            )
-
-        return parsed_response
+        return _parse_json_response(
+            content,
+            "OpenAI",
+        )
 
     except AuthenticationError:
-        logger.error("LLM authentication failed")
+        logger.error("OpenAI authentication failed")
 
         return llm_error_response(
-            "The recommendation service authentication failed.",
+            "The OpenAI recommendation service authentication failed.",
             "authentication_error",
         )
 
     except APITimeoutError:
-        logger.error("LLM request timed out")
+        logger.error("OpenAI request timed out")
 
         return llm_error_response(
-            "The recommendation service timed out. Please try again.",
+            "The OpenAI recommendation service timed out.",
             "timeout_error",
         )
 
     except APIConnectionError:
-        logger.error("Could not connect to the LLM service")
+        logger.error("OpenAI connection failed")
 
         return llm_error_response(
-            "The recommendation service is temporarily unavailable.",
+            "The OpenAI recommendation service is unavailable.",
             "connection_error",
         )
 
     except RateLimitError as exc:
-        logger.warning("LLM quota or rate limit reached")
+        logger.warning("OpenAI quota or rate limit reached")
 
         error_code = getattr(exc, "code", None)
 
         if error_code == "insufficient_quota":
             return llm_error_response(
-                (
-                    "OpenAI API quota is unavailable. "
-                    "Enable mock mode or configure API billing."
-                ),
+                "OpenAI API quota is unavailable.",
                 "quota_error",
             )
 
         return llm_error_response(
-            "The recommendation service is temporarily rate limited.",
+            "The OpenAI service is temporarily rate limited.",
             "rate_limit_error",
         )
 
     except APIStatusError as exc:
         logger.error(
-            "LLM API returned status code %s",
+            "OpenAI returned status code %s",
             exc.status_code,
         )
 
         return llm_error_response(
             (
-                "The recommendation service returned an error: "
-                f"{exc.status_code}."
+                "The OpenAI recommendation service returned "
+                f"error {exc.status_code}."
             ),
             "api_error",
         )
 
-    except json.JSONDecodeError:
-        logger.error("The LLM response was not valid JSON")
-
-        return llm_error_response(
-            "The recommendation service returned invalid JSON.",
-            "invalid_json",
-        )
-
     except Exception as exc:
-        logger.error(
-            "Unexpected LLM error: %s",
-            type(exc).__name__,
+        logger.exception(
+            "Unexpected OpenAI error: %s",
+            str(exc),
         )
 
         return llm_error_response(
-            "An unexpected recommendation service error occurred.",
+            "An unexpected OpenAI service error occurred.",
             "llm_error",
         )
+
+
+def generate_recommendations(
+    messages: list[dict[str, str]],
+) -> dict[str, Any]:
+    """Use mock, Gemini, or OpenAI to generate recommendations."""
+    if not messages:
+        return llm_error_response(
+            "No messages were supplied to the LLM.",
+            "validation_error",
+        )
+
+    if USE_MOCK_LLM:
+        logger.info("Using mock LLM response")
+        return mock_recommendation_response()
+
+    if LLM_PROVIDER == "gemini":
+        logger.info("Using live Gemini model")
+        return _call_gemini(messages)
+
+    if LLM_PROVIDER == "openai":
+        logger.info("Using live OpenAI model")
+        return _call_openai(messages)
+
+    return llm_error_response(
+        f"Unsupported LLM provider: {LLM_PROVIDER}",
+        "configuration_error",
+    )
 
 
 def call_llm(
     prompt: str | list[dict[str, str]],
 ) -> dict[str, Any]:
     """
-    Compatibility wrapper used by app.py.
+    Compatibility wrapper for app.py.
 
-    Accept either:
-    - a plain prompt string, or
-    - a list of chat messages returned by craft_prompt().
+    Accept either a plain string or the message list returned by
+    craft_prompt().
     """
     if isinstance(prompt, str):
         messages = [
