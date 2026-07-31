@@ -1,0 +1,6 @@
+InstanceId,CPUUtilization,State,Region
+i-001,2,running,us-east-1
+i-002,85,running,us-east-1
+i-003,1,stopped,us-west-2
+i-004,12,running,us-east-1
+i-005,0,running,us-west-2
