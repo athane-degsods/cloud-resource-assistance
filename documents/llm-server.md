@@ -12,10 +12,13 @@ flowchart LR
     D --> E[readable response / UI]
 ```
 
+
+
 **Input:** `messages: list[{ "role": str, "content": str }]`  
 (usually system + user messages from `prompt_crafter`)
 
 **Output:** `dict` with at least:
+
 - `status`
 - `summary`
 - `privacy_warning`
@@ -23,6 +26,8 @@ flowchart LR
 - `requires_human_review`
 
 ---
+
+
 
 ## High-level decision flow
 
@@ -55,7 +60,11 @@ flowchart TD
     OK --> End2
 ```
 
+
+
 ---
+
+
 
 ## Mock vs live mode
 
@@ -85,13 +94,19 @@ flowchart TB
     F3 --> live
 ```
 
-| Mode | When | Behavior |
-|------|------|----------|
-| Mock | `USE_MOCK_LLM = True` | Always returns the same demo recommendation |
-| Live | `USE_MOCK_LLM = False` + API key | Calls OpenAI; returns model JSON |
-| Safe fail | Missing key / API errors | Returns `llm_error_response(...)` — never crashes the app |
+
+
+
+| Mode      | When                             | Behavior                                                  |
+| --------- | -------------------------------- | --------------------------------------------------------- |
+| Mock      | `USE_MOCK_LLM = True`            | Always returns the same demo recommendation               |
+| Live      | `USE_MOCK_LLM = False` + API key | Calls OpenAI; returns model JSON                          |
+| Safe fail | Missing key / API errors         | Returns `llm_error_response(...)` — never crashes the app |
+
 
 ---
+
+
 
 ## Success response shape (mock / expected live)
 
@@ -111,9 +126,13 @@ flowchart TB
     P1 --> Fields["id, title, risk, recommended, reason,<br/>evidence[], steps[], pros[], cons[],<br/>requires_approval, mock_action"]
 ```
 
+
+
 Each `mock_action` is a **suggestion only** (e.g. `stop_instance` + `instance_id`). The LLM server does **not** execute cloud changes.
 
 ---
+
+
 
 ## Error handling map
 
@@ -138,23 +157,29 @@ flowchart LR
     errors --> Out
 ```
 
-| Exception / case | `status` returned |
-|------------------|-------------------|
-| Empty `messages` | `validation_error` |
-| No `OPENAI_API_KEY` | `configuration_error` |
-| Empty model content | `empty_response` |
-| `AuthenticationError` | `authentication_error` |
-| `APITimeoutError` | `timeout_error` |
-| `APIConnectionError` | `connection_error` |
-| `RateLimitError` (quota) | `quota_error` |
-| `RateLimitError` (other) | `rate_limit_error` |
-| `APIStatusError` | `api_error` |
-| Bad JSON from model | `invalid_json` |
-| Anything else | `llm_error` |
+
+
+
+| Exception / case         | `status` returned      |
+| ------------------------ | ---------------------- |
+| Empty `messages`         | `validation_error`     |
+| No `OPENAI_API_KEY`      | `configuration_error`  |
+| Empty model content      | `empty_response`       |
+| `AuthenticationError`    | `authentication_error` |
+| `APITimeoutError`        | `timeout_error`        |
+| `APIConnectionError`     | `connection_error`     |
+| `RateLimitError` (quota) | `quota_error`          |
+| `RateLimitError` (other) | `rate_limit_error`     |
+| `APIStatusError`         | `api_error`            |
+| Bad JSON from model      | `invalid_json`         |
+| Anything else            | `llm_error`            |
+
 
 Downstream `json_handler` treats these statuses as safe/error responses for the UI.
 
 ---
+
+
 
 ## Functions in this file
 
@@ -171,13 +196,19 @@ flowchart TB
     GR -->|live success| JSON[parsed OpenAI JSON]
 ```
 
-| Function | Role |
-|----------|------|
-| `llm_error_response` | Build a uniform error dict |
-| `mock_recommendation_response` | Hardcoded 3-path demo payload |
-| `generate_recommendations` | Main entry: validate → mock or live API → dict |
+
+
+
+| Function                       | Role                                           |
+| ------------------------------ | ---------------------------------------------- |
+| `llm_error_response`           | Build a uniform error dict                     |
+| `mock_recommendation_response` | Hardcoded 3-path demo payload                  |
+| `generate_recommendations`     | Main entry: validate → mock or live API → dict |
+
 
 ---
+
+
 
 ## How `app.py` uses it today
 
@@ -197,9 +228,13 @@ sequenceDiagram
     JH-->>App: readable summary (+ validated structure)
 ```
 
+
+
 > Note: Some branches expose an adapter named `call_llm` that wraps `generate_recommendations`. If your local `app.py` imports `call_llm`, that adapter should call this same flow.
 
 ---
+
+
 
 ## Enabling live LLM (checklist)
 
@@ -211,8 +246,11 @@ sequenceDiagram
 
 ---
 
+
+
 ## Design intent (hackathon)
 
 - **AI recommends only** — paths include `requires_approval` and `mock_action`; humans decide later.
 - **Mock-first** — full demo without billing.
-- **Fail closed on transport** — API problems become structured errors, not stack traces to the UI.
+- **Fail closed on tra*n*sport** — API problems become structured errors, not stack traces to the UI.
+

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Trace {{ trace.request_id }}</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #f4f6f8;
+      color: #1a1a1a;
+      line-height: 1.45;
+    }
+    main { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+    a { color: #0b6bcb; }
+    .card {
+      background: #fff;
+      border: 1px solid #d8dee6;
+      border-radius: 8px;
+      padding: 1rem 1.1rem;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    th, td { text-align: left; padding: 0.45rem 0.5rem; border-bottom: 1px solid #d8dee6; vertical-align: top; }
+    th { color: #5c6570; }
+    .mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem; }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 0.8rem;
+      color: #1a1a1a;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <p><a href="{{ url_for('logs_page') }}">← All logs</a></p>
+    <div class="card">
+      <h1 class="mono">{{ trace.request_id }}</h1>
+      <p>
+        status: <strong>{{ trace.status }}</strong>
+        · duration: {{ trace.duration_ms if trace.duration_ms is defined else "—" }} ms
+        · started: {{ trace.started_at }}
+      </p>
+      <p>{{ trace.message_preview }}</p>
+      <table>
+        <thead>
+          <tr>
+            <th>seq</th>
+            <th>component</th>
+            <th>event</th>
+            <th>detail</th>
+            <th>data</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in trace.steps %}
+          <tr>
+            <td>{{ s.seq }}</td>
+            <td>{{ s.component }}</td>
+            <td>{{ s.event }}</td>
+            <td>{{ s.detail }}</td>
+            <td><pre>{{ s.data }}</pre></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>

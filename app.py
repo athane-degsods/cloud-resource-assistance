@@ -10,15 +10,16 @@ Pipeline (see idea.md):
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+import time
 
 from flask import Flask, jsonify, render_template, request
 
+from modules import pipeline_log
 from modules.ec2_processor import process_ec2
-from modules.request_filter import filter_and_request
 from modules.json_handler import handle_json
 from modules.llm_server import call_llm
 from modules.prompt_crafter import craft_prompt
+from modules.request_filter import filter_and_request
 from modules.string_breakdown import breakdown
 
 app = Flask(__name__)
@@ -27,25 +28,10 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
-log = logging.getLogger("processing")
-
-# Simple in-memory action log (hackathon-scale)
-action_log: list[dict] = []
-
-
-def _log_step(step: str, detail: str = "") -> None:
-    entry = {
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "step": step,
-        "detail": detail,
-    }
-    action_log.append(entry)
-    log.info("%s | %s", step, detail or "-")
 
 
 def _pii_warning(message: str) -> str | None:
     """Lightweight private-information check on user requests."""
-    # TODO: expand patterns; placeholder for safety gate
     markers = ["ssn", "password", "secret", "api_key", "access_key"]
     lowered = message.lower()
     hits = [m for m in markers if m in lowered]
@@ -54,53 +40,133 @@ def _pii_warning(message: str) -> str | None:
     return None
 
 
-def process_request(message: str) -> dict:
+def process_request(
+    message: str,
+    request_id: str | None = None,
+    action: str | None = None,
+) -> dict:
     """
     Orchestrate downstream modules for one chat turn.
-    Teammates own each module body; this only routes and logs.
+    Phase 1 logging: spine only (enter/exit around each module call).
     """
-    _log_step("request_received", message[:200])
+    rid = request_id or pipeline_log.new_request_id()
+    started = time.perf_counter()
+    pipeline_log.start(rid, message)
 
-    warning = _pii_warning(message)
-    if warning:
-        _log_step("pii_warning", warning)
+    try:
+        if action:
+            pipeline_log.step(
+                rid,
+                "human_action",
+                "info",
+                detail=str(action),
+                data={"action": action},
+            )
 
-    # 2–6: string breakdown → filter runbooks
-    words = breakdown(message)
-    _log_step("string_breakdown", f"words={words}")
+        warning = _pii_warning(message)
+        pipeline_log.step(
+            rid,
+            "pii_check",
+            "info",
+            detail=warning or "clean",
+            data={"warning": warning},
+        )
 
-    documents = filter_and_request(words)
-    _log_step("filter_and_request", f"paths={documents}")
+        words = breakdown(message)
+        pipeline_log.step(
+            rid,
+            "string_breakdown",
+            "exit",
+            detail=f"words={len(words)}",
+            data={"words": words},
+        )
 
-    # 7–10: EC2 data (ingestor → pass-through for now)
-    ec2_text = process_ec2(request_hint=message)
-    _log_step("ec2_processor", f"ec2_text_len={len(ec2_text)}")
+        documents = filter_and_request(words)
+        pipeline_log.step(
+            rid,
+            "request_filter",
+            "exit",
+            detail=f"paths={len(documents)}",
+            data={"paths": documents},
+        )
 
-    # 11–12: prompt
-    prompt = craft_prompt(message, documents, ec2_text)
-    _log_step("prompt_crafter", f"prompt_len={len(prompt)}")
+        ec2_text = process_ec2(request_hint=message)
+        pipeline_log.step(
+            rid,
+            "ec2_processor",
+            "exit",
+            detail=f"ec2_text_len={len(ec2_text)}",
+            data={"ec2_text_len": len(ec2_text)},
+        )
 
-    # 13–14: LLM
-    model_json = call_llm(prompt)
-    _log_step("llm_server", f"keys={list(model_json.keys()) if isinstance(model_json, dict) else 'n/a'}")
+        prompt = craft_prompt(message, documents, ec2_text)
+        pipeline_log.step(
+            rid,
+            "prompt_crafter",
+            "exit",
+            detail=f"messages={len(prompt) if hasattr(prompt, '__len__') else 'n/a'}",
+            data={
+                "message_count": len(prompt) if isinstance(prompt, list) else None,
+            },
+        )
 
-    # 15–16: readable response
-    readable = handle_json(model_json)
-    _log_step("json_handler", f"response_len={len(readable)}")
+        model_json = call_llm(prompt)
+        status = model_json.get("status") if isinstance(model_json, dict) else None
+        path_count = (
+            len(model_json.get("paths") or [])
+            if isinstance(model_json, dict)
+            else 0
+        )
+        pipeline_log.step(
+            rid,
+            "llm_server",
+            "exit",
+            detail=f"status={status} paths={path_count}",
+            data={
+                "status": status,
+                "path_count": path_count,
+                "keys": list(model_json.keys()) if isinstance(model_json, dict) else [],
+            },
+        )
 
-    return {
-        "readable_response": readable,
-        "model_response": model_json,
-        "pii_warning": warning,
-        "words": words,
-        "paths": documents,
-        "ec2_text": ec2_text,
-        "meta": {
-            "word_count": len(words),
-            "document_count": len(documents),
-            "ec2_text_len": len(ec2_text),
-        },
-    }
+        readable = handle_json(model_json)
+        pipeline_log.step(
+            rid,
+            "json_handler",
+            "exit",
+            detail=f"readable_len={len(readable)}",
+            data={"readable_len": len(readable)},
+        )
+
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        pipeline_log.finish(rid, status="ok", duration_ms=elapsed_ms)
+
+        return {
+            "request_id": rid,
+            "readable_response": readable,
+            "model_response": model_json,
+            "pii_warning": warning,
+            "words": words,
+            "paths": documents,
+            "ec2_text": ec2_text,
+            "steps": (pipeline_log.get_trace(rid) or {}).get("steps", []),
+            "meta": {
+                "word_count": len(words),
+                "document_count": len(documents),
+                "ec2_text_len": len(ec2_text),
+                "duration_ms": elapsed_ms,
+            },
+        }
+    except Exception as exc:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        pipeline_log.step(
+            rid,
+            "processing",
+            "error",
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+        pipeline_log.finish(rid, status="error", duration_ms=elapsed_ms)
+        raise
 
 
 @app.get("/")
@@ -122,10 +188,7 @@ def chat():
     if not message:
         return jsonify({"error": "message is required"}), 400
 
-    if action:
-        _log_step("human_action", str(action))
-
-    result = process_request(message)
+    result = process_request(message, action=action)
     return jsonify(result)
 
 
@@ -135,9 +198,43 @@ def health():
 
 
 @app.get("/logs")
-def logs():
-    """Simple action log for the demo."""
-    return jsonify({"logs": action_log})
+def logs_page():
+    """Readable HTML view of pipeline logs (browser-friendly)."""
+    return render_template(
+        "logs.html",
+        requests=pipeline_log.get_recent_summaries(),
+        events=pipeline_log.get_recent_events(limit=50),
+    )
+
+
+@app.get("/logs.json")
+def logs_json():
+    """Machine-readable log dump."""
+    return jsonify(
+        {
+            "requests": pipeline_log.get_recent_summaries(),
+            "events": pipeline_log.get_recent_events(),
+        }
+    )
+
+
+@app.get("/logs/<request_id>")
+def logs_for_request(request_id: str):
+    """Full ordered trail for one chat request (HTML in browser, JSON if asked)."""
+    trace = pipeline_log.get_trace(request_id)
+    if not trace:
+        return jsonify({"error": "request_id not found"}), 404
+
+    wants_json = (
+        request.args.get("format") == "json"
+        or request.accept_mimetypes.best_match(
+            ["text/html", "application/json"]
+        )
+        == "application/json"
+    )
+    if wants_json:
+        return jsonify(trace)
+    return render_template("logs_detail.html", trace=trace)
 
 
 if __name__ == "__main__":
