@@ -158,15 +158,6 @@ def mock_recommendation_response() -> dict[str, Any]:
     }
 
 
-def call_llm(prompt: str | list[dict[str, str]]) -> dict[str, Any]:
-    """Adapter for app.py — accept prompt string or chat messages."""
-    if isinstance(prompt, str):
-        messages = [{"role": "user", "content": prompt}]
-    else:
-        messages = prompt
-    return generate_recommendations(messages)
-
-
 def generate_recommendations(
     messages: list[dict[str, str]],
 ) -> dict[str, Any]:
