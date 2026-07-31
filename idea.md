@@ -35,6 +35,7 @@ erDiagram
         network_avg int
     }
 ```
+
 PS: the pipeline focus on processing EC2 data first before extend to other services.
 
 There should be a middle component to handle data transformation
@@ -50,6 +51,7 @@ flowchart LR
     B --> C[EC2 CSV: id name state cpu network env]
     C --> D[Main processor]
 ```
+
 Triggering actions are user requests.
 
 **Run book pipeline**
@@ -110,7 +112,7 @@ flowchart TD
     F -->|"17 readable response"| A
 ```
 
-**Code component**
+## Code component
 
 Rectangle modules from the diagram (except Processing). Each is treated as a callable with params → return.
 
