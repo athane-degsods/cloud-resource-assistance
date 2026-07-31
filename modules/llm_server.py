@@ -19,9 +19,12 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gpt-4.1-mini"
 
-# Keep this True to run without paid OpenAI API usage.
-# Change it to False later when API billing is available.
-USE_MOCK_LLM = True
+# Controlled through the local .env file:
+# USE_MOCK_LLM=true  -> return hardcoded mock recommendations
+# USE_MOCK_LLM=false -> call the real LLM API
+USE_MOCK_LLM = (
+    os.getenv("USE_MOCK_LLM", "true").strip().lower() == "true"
+)
 
 
 def llm_error_response(
@@ -29,7 +32,7 @@ def llm_error_response(
     error_type: str = "llm_error",
 ) -> dict[str, Any]:
     """
-    Return a consistent and safe response when the LLM request fails.
+    Return a consistent and safe response when an LLM request fails.
     """
     return {
         "status": error_type,
@@ -42,9 +45,7 @@ def llm_error_response(
 
 def mock_recommendation_response() -> dict[str, Any]:
     """
-    Return a realistic mock LLM response for the hackathon demo.
-
-    This lets the complete application run without purchasing API credits.
+    Return a realistic mock response for local development and demos.
     """
     return {
         "status": "success",
@@ -164,12 +165,11 @@ def generate_recommendations(
     """
     Generate cloud-resource recommendations.
 
-    In mock mode, this function returns a predefined response.
+    In mock mode, return a predefined response.
 
-    In live mode, it sends the crafted messages to the OpenAI API and
-    returns the model response as a Python dictionary.
+    In live mode, send the crafted chat messages to the OpenAI API
+    and return the parsed JSON response.
     """
-
     if not messages:
         return llm_error_response(
             "No messages were supplied to the LLM.",
@@ -216,7 +216,15 @@ def generate_recommendations(
                 "empty_response",
             )
 
-        return json.loads(content)
+        parsed_response = json.loads(content)
+
+        if not isinstance(parsed_response, dict):
+            return llm_error_response(
+                "The model response was not a JSON object.",
+                "invalid_json",
+            )
+
+        return parsed_response
 
     except AuthenticationError:
         logger.error("LLM authentication failed")
@@ -293,3 +301,31 @@ def generate_recommendations(
             "An unexpected recommendation service error occurred.",
             "llm_error",
         )
+
+
+def call_llm(
+    prompt: str | list[dict[str, str]],
+) -> dict[str, Any]:
+    """
+    Compatibility wrapper used by app.py.
+
+    Accept either:
+    - a plain prompt string, or
+    - a list of chat messages returned by craft_prompt().
+    """
+    if isinstance(prompt, str):
+        messages = [
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ]
+    elif isinstance(prompt, list):
+        messages = prompt
+    else:
+        return llm_error_response(
+            "The LLM prompt must be a string or message list.",
+            "validation_error",
+        )
+
+    return generate_recommendations(messages)
