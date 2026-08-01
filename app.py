@@ -15,11 +15,12 @@ chat request
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+import time
 from typing import Any
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 
+from modules import pipeline_log
 from modules.ec2_processor import process_ec2
 from modules.filter_request import filter_and_request
 from modules.json_handler import handle_model_response
@@ -35,22 +36,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
-log = logging.getLogger("processing")
-
-# Simple in-memory action log for the hackathon prototype.
-action_log: list[dict[str, Any]] = []
-
-
-def _log_step(step: str, detail: str = "") -> None:
-    """Add one pipeline activity to the action log."""
-    entry = {
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "step": step,
-        "detail": detail,
-    }
-
-    action_log.append(entry)
-    log.info("%s | %s", step, detail or "-")
+logger = logging.getLogger("processing")
 
 
 def _pii_warning(message: str) -> str | None:
@@ -82,9 +68,11 @@ def _safe_processing_error(
     status: str,
     summary: str,
     warning: str | None = None,
+    request_id: str | None = None,
+    duration_ms: int = 0,
 ) -> dict[str, Any]:
     """Create a consistent safe response when processing fails."""
-    return {
+    result: dict[str, Any] = {
         "recommendation": {
             "status": status,
             "summary": summary,
@@ -97,238 +85,196 @@ def _safe_processing_error(
             "word_count": 0,
             "document_count": 0,
             "ec2_record_count": 0,
+            "duration_ms": duration_ms,
         },
     }
 
+    if request_id:
+        result["request_id"] = request_id
+        result["steps"] = (
+            pipeline_log.get_trace(request_id) or {}
+        ).get("steps", [])
 
-def process_request(message: str) -> dict[str, Any]:
+    return result
+
+
+def process_request(
+    message: str,
+    request_id: str | None = None,
+    action: str | None = None,
+) -> dict[str, Any]:
     """Route one user request through the complete pipeline."""
-    _log_step("request_received", message[:200])
+    rid = request_id or pipeline_log.new_request_id()
+    started = time.perf_counter()
+
+    pipeline_log.start(rid, message)
 
     warning = _pii_warning(message)
 
-    if warning:
-        _log_step("pii_warning", warning)
-
-    # Step 1: Break the request into searchable words.
     try:
-        words = breakdown(message)
-    except Exception as exc:
-        _log_step(
-            "string_breakdown_error",
-            type(exc).__name__,
+        if action:
+            pipeline_log.step(
+                rid,
+                "human_action",
+                "info",
+                detail=action,
+                data={"action": action},
+            )
+
+        pipeline_log.step(
+            rid,
+            "pii_check",
+            "info",
+            detail=warning or "clean",
+            data={"warning": warning},
         )
 
-        return _safe_processing_error(
-            status="processing_error",
-            summary="The request could not be analyzed.",
-            warning=warning,
+        # Step 1: Break the request into searchable words.
+        try:
+            words = breakdown(message)
+        except Exception as exc:
+            pipeline_log.step(
+                rid,
+                "string_breakdown",
+                "error",
+                detail=type(exc).__name__,
+            )
+
+            elapsed_ms = int(
+                (time.perf_counter() - started) * 1000
+            )
+
+            pipeline_log.finish(
+                rid,
+                status="error",
+                duration_ms=elapsed_ms,
+            )
+
+            return _safe_processing_error(
+                status="processing_error",
+                summary="The request could not be analyzed.",
+                warning=warning,
+                request_id=rid,
+                duration_ms=elapsed_ms,
+            )
+
+        pipeline_log.step(
+            rid,
+            "string_breakdown",
+            "exit",
+            detail=f"words={len(words)}",
+            data={"words": words},
         )
 
-    _log_step(
-        "string_breakdown",
-        f"words={len(words)}",
-    )
+        # Step 2: Select relevant runbook documents.
+        try:
+            documents = filter_and_request(words)
+        except Exception as exc:
+            pipeline_log.step(
+                rid,
+                "filter_and_request",
+                "error",
+                detail=type(exc).__name__,
+            )
+            documents = []
 
-    # Step 2: Select relevant runbook documents.
-    try:
-        documents = filter_and_request(words)
-    except Exception as exc:
-        _log_step(
-            "filter_and_request_error",
-            type(exc).__name__,
-        )
-        documents = []
-
-    _log_step(
-        "filter_and_request",
-        f"docs={len(documents)}",
-    )
-
-    # Step 3: Obtain cleaned EC2 records.
-    try:
-        ec2_records = process_ec2(request_hint=message)
-    except Exception as exc:
-        _log_step(
-            "ec2_processor_error",
-            type(exc).__name__,
-        )
-        ec2_records = []
-
-    _log_step(
-        "ec2_processor",
-        f"records={len(ec2_records)}",
-    )
-
-    # Step 4: Build secure prompt messages.
-    try:
-        prompt_messages = craft_prompt(
-            user_request=message,
-            documents=documents,
-            ec2_records=ec2_records,
-        )
-    except ValueError as exc:
-        _log_step(
-            "prompt_validation_error",
-            str(exc),
+        pipeline_log.step(
+            rid,
+            "filter_and_request",
+            "exit",
+            detail=f"documents={len(documents)}",
+            data={"document_count": len(documents)},
         )
 
-        return {
-            "recommendation": {
-                "status": "privacy_warning",
-                "summary": str(exc),
-                "privacy_warning": str(exc),
-                "paths": [],
-                "requires_human_review": True,
-            },
-            "pii_warning": str(exc),
-            "meta": {
-                "word_count": len(words),
-                "document_count": len(documents),
-                "ec2_record_count": len(ec2_records),
-            },
-        }
-    except Exception as exc:
-        _log_step(
-            "prompt_crafting_error",
-            type(exc).__name__,
+        # Step 3: Obtain cleaned EC2 records.
+        try:
+            ec2_records = process_ec2(request_hint=message)
+        except Exception as exc:
+            pipeline_log.step(
+                rid,
+                "ec2_processor",
+                "error",
+                detail=type(exc).__name__,
+            )
+            ec2_records = []
+
+        pipeline_log.step(
+            rid,
+            "ec2_processor",
+            "exit",
+            detail=f"records={len(ec2_records)}",
+            data={"ec2_record_count": len(ec2_records)},
         )
 
-        return {
-            "recommendation": {
-                "status": "processing_error",
-                "summary": "The LLM prompt could not be created.",
-                "privacy_warning": warning,
-                "paths": [],
-                "requires_human_review": True,
-            },
-            "pii_warning": warning,
-            "meta": {
-                "word_count": len(words),
-                "document_count": len(documents),
-                "ec2_record_count": len(ec2_records),
-            },
-        }
+        # Step 4: Build secure prompt messages.
+        try:
+            prompt_messages = craft_prompt(
+                user_request=message,
+                documents=documents,
+                ec2_records=ec2_records,
+            )
+        except ValueError as exc:
+            pipeline_log.step(
+                rid,
+                "prompt_crafter",
+                "error",
+                detail=str(exc),
+            )
 
-    _log_step(
-        "prompt_crafting",
-        f"message_count={len(prompt_messages)}",
-    )
+            elapsed_ms = int(
+                (time.perf_counter() - started) * 1000
+            )
 
-    # Step 5: Call mock or live LLM.
-    model_json = call_llm(prompt_messages)
+            pipeline_log.finish(
+                rid,
+                status="blocked",
+                duration_ms=elapsed_ms,
+            )
 
-    if isinstance(model_json, dict):
-        _log_step(
-            "llm_server",
-            f"status={model_json.get('status', 'unknown')}",
-        )
-    else:
-        _log_step(
-            "llm_server",
-            "invalid non-dictionary response",
-        )
-
-    # Step 6: Validate and normalize model output.
-    validated_response = handle_model_response(model_json)
-
-    _log_step(
-        "json_handler",
-        f"status={validated_response.get('status')}",
-    )
-
-    return {
-        "recommendation": validated_response,
-        "model_response": model_json,
-        "pii_warning": warning,
-        "meta": {
-            "word_count": len(words),
-            "document_count": len(documents),
-            "ec2_record_count": len(ec2_records),
-        },
-    }
-
-
-@app.post("/chat")
-def chat():
-    """
-    Process a cloud-resource assistance request.
-
-    JSON body:
-    {
-        "message": "Help me reduce cost from idle EC2 instances",
-        "action": "approve | edit | reject"
-    }
-    """
-    body = request.get_json(silent=True) or {}
-
-    message = str(body.get("message") or "").strip()
-    action = body.get("action")
-
-    if not message:
-        return jsonify(
-            {
-                "status": "validation_error",
-                "summary": "message is required",
-                "paths": [],
-                "requires_human_review": True,
-            }
-        ), 400
-
-    if action:
-        allowed_actions = {
-            "approve",
-            "edit",
-            "reject",
-        }
-
-        normalized_action = str(action).strip().lower()
-
-        if normalized_action not in allowed_actions:
-            return jsonify(
-                {
-                    "status": "validation_error",
-                    "summary": (
-                        "action must be approve, edit, or reject"
-                    ),
+            return {
+                "request_id": rid,
+                "recommendation": {
+                    "status": "privacy_warning",
+                    "summary": str(exc),
+                    "privacy_warning": str(exc),
                     "paths": [],
                     "requires_human_review": True,
-                }
-            ), 400
+                },
+                "pii_warning": str(exc),
+                "steps": (
+                    pipeline_log.get_trace(rid) or {}
+                ).get("steps", []),
+                "meta": {
+                    "word_count": len(words),
+                    "document_count": len(documents),
+                    "ec2_record_count": len(ec2_records),
+                    "duration_ms": elapsed_ms,
+                },
+            }
+        except Exception as exc:
+            pipeline_log.step(
+                rid,
+                "prompt_crafter",
+                "error",
+                detail=type(exc).__name__,
+            )
 
-        _log_step(
-            "human_action",
-            normalized_action,
-        )
+            elapsed_ms = int(
+                (time.perf_counter() - started) * 1000
+            )
 
-    result = process_request(message)
+            pipeline_log.finish(
+                rid,
+                status="error",
+                duration_ms=elapsed_ms,
+            )
 
-    return jsonify(result)
-
-
-@app.get("/health")
-def health():
-    """Health-check endpoint."""
-    return jsonify(
-        {
-            "status": "ok",
-        }
-    )
-
-
-@app.get("/logs")
-def logs():
-    """Return the in-memory action log."""
-    return jsonify(
-        {
-            "logs": action_log,
-        }
-    )
-
-
-if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=5000,
-        debug=True,
-    )
+            return {
+                "request_id": rid,
+                "recommendation": {
+                    "status": "processing_error",
+                    "summary": (
+                        "The LLM prompt could not be created."
+                    ),
+                    "privacy_warning": warning,
+                    "paths": [],

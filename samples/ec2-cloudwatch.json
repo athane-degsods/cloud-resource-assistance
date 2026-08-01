@@ -1,0 +1,63 @@
+{
+  "source": "cloudwatch-mock",
+  "service": "EC2",
+  "region": "us-east-1",
+  "fetched_at": "2026-07-31T12:00:00Z",
+  "instances": [
+    {
+      "InstanceId": "i-001",
+      "Name": "dev-api",
+      "State": "running",
+      "Environment": "dev",
+      "Region": "us-east-1",
+      "Metrics": {
+        "CPUUtilization": { "Average24h": 2, "Unit": "Percent" },
+        "NetworkIn": { "Average24h": 120, "Unit": "Bytes" }
+      }
+    },
+    {
+      "InstanceId": "i-002",
+      "Name": "prod-web",
+      "State": "running",
+      "Environment": "prod",
+      "Region": "us-east-1",
+      "Metrics": {
+        "CPUUtilization": { "Average24h": 85, "Unit": "Percent" },
+        "NetworkIn": { "Average24h": 9400, "Unit": "Bytes" }
+      }
+    },
+    {
+      "InstanceId": "i-003",
+      "Name": "dev-worker",
+      "State": "stopped",
+      "Environment": "dev",
+      "Region": "us-west-2",
+      "Metrics": {
+        "CPUUtilization": { "Average24h": 1, "Unit": "Percent" },
+        "NetworkIn": { "Average24h": 10, "Unit": "Bytes" }
+      }
+    },
+    {
+      "InstanceId": "i-004",
+      "Name": "staging-api",
+      "State": "running",
+      "Environment": "staging",
+      "Region": "us-east-1",
+      "Metrics": {
+        "CPUUtilization": { "Average24h": 12, "Unit": "Percent" },
+        "NetworkIn": { "Average24h": 800, "Unit": "Bytes" }
+      }
+    },
+    {
+      "InstanceId": "i-005",
+      "Name": "dev-batch",
+      "State": "running",
+      "Environment": "dev",
+      "Region": "us-west-2",
+      "Metrics": {
+        "CPUUtilization": { "Average24h": 0, "Unit": "Percent" },
+        "NetworkIn": { "Average24h": 5, "Unit": "Bytes" }
+      }
+    }
+  ]
+}

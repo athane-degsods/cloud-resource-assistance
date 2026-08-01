@@ -1,24 +1,11 @@
-"""EC2 data processor — normalize raw EC2 info to clean records."""
-
-from typing import TypedDict
+"""EC2 data processor — for now, pass through text from the AWS ingestor."""
 
 from modules.aws_ingestor import ingest
 
 
-class EC2Record(TypedDict):
-    instance_id: str
-    name: str
-    state: str
-    cpu_avg_24h: int
-    network_avg: int
-    env: str
-
-
-def process_ec2(request_hint: str = "") -> list[EC2Record]:
+def process_ec2(request_hint: str = "") -> str:
     """
-    params: request_hint: str (optional filters from user intent)
-    return: ec2_records: list[EC2Record]
+    params: request_hint: str (unused for now; filtering comes later)
+    return: ec2 text document from the CloudWatch sample
     """
-    # TODO: Akshita — ask ingestor, normalize to clean CSV-shaped records
-    _raw: dict | list = ingest(source="mock")
-    return []
+    return ingest()

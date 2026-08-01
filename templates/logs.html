@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Pipeline logs</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --text: #1a1a1a;
+      --muted: #5c6570;
+      --border: #d8dee6;
+      --accent: #0b6bcb;
+    }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    main { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+    h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
+    .sub { color: var(--muted); margin-bottom: 1.25rem; }
+    a { color: var(--accent); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.1rem;
+      margin-bottom: 1rem;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    th, td { text-align: left; padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    code, .mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem; }
+    .pill {
+      display: inline-block;
+      padding: 0.1rem 0.45rem;
+      border-radius: 999px;
+      background: #e8f1fb;
+      color: #0b6bcb;
+      font-size: 0.8rem;
+    }
+    .pill.ok { background: #e5f6ea; color: #1b7a3a; }
+    .pill.error { background: #fdeceb; color: #b42318; }
+    .pill.running { background: #fff4d6; color: #8a6d00; }
+    details { margin-top: 0.5rem; }
+    pre {
+      margin: 0.5rem 0 0;
+      padding: 0.75rem;
+      background: #f0f3f7;
+      color: #1a1a1a;
+      border-radius: 6px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Pipeline logs</h1>
+    <p class="sub">
+      Readable view of backend steps.
+      Raw JSON: <a href="{{ url_for('logs_json') }}">/logs.json</a>
+      · <a href="{{ url_for('index') }}">Back to chat</a>
+    </p>
+
+    <section class="card">
+      <h2>Recent requests</h2>
+      {% if requests %}
+      <table>
+        <thead>
+          <tr>
+            <th>request_id</th>
+            <th>status</th>
+            <th>steps</th>
+            <th>ms</th>
+            <th>message</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in requests %}
+          <tr>
+            <td class="mono">
+              <a href="{{ url_for('logs_for_request', request_id=r.request_id) }}">{{ r.request_id }}</a>
+            </td>
+            <td><span class="pill {{ r.status }}">{{ r.status }}</span></td>
+            <td>{{ r.step_count }}</td>
+            <td>{{ r.duration_ms if r.duration_ms is not none else "—" }}</td>
+            <td>{{ r.message_preview }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="sub">No requests yet. Send a chat first.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Recent events</h2>
+      {% if events %}
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>request</th>
+            <th>component</th>
+            <th>event</th>
+            <th>detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in events %}
+          <tr>
+            <td>{{ e.seq }}</td>
+            <td class="mono">{{ e.request_id }}</td>
+            <td>{{ e.component }}</td>
+            <td>{{ e.event }}</td>
+            <td>{{ e.detail }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="sub">No events yet.</p>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>

@@ -176,6 +176,14 @@ def validate_path(
     return True, None
 
 
+def handle_json(model_response_json: dict[str, Any] | str) -> str:
+    """Adapter for app.py — return a readable summary string."""
+    result = handle_model_response(model_response_json)
+    if isinstance(result, dict):
+        return str(result.get("summary", result))
+    return str(result)
+
+
 def handle_model_response(
     response: dict[str, Any] | str,
 ) -> dict[str, Any]:

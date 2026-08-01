@@ -178,7 +178,7 @@ def _messages_to_gemini_prompt(
 
 
 def _remove_code_fences(text: str) -> str:
-    """Remove accidental Markdown fences before JSON parsing."""
+    """Remove accidental Markdown code fences."""
     cleaned = text.strip()
 
     if cleaned.startswith("```json"):
@@ -227,6 +227,7 @@ def _call_gemini(
 ) -> dict[str, Any]:
     """Send crafted messages to Gemini and return parsed JSON."""
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
+
     model = os.getenv(
         "GEMINI_MODEL",
         os.getenv("LLM_MODEL", DEFAULT_GEMINI_MODEL),
@@ -273,8 +274,6 @@ def _call_gemini(
         )
 
     except Exception as exc:
-        # This logs the useful error in the server terminal.
-        # It does not return credentials to the user.
         logger.exception(
             "Gemini request failed: %s",
             str(exc),
@@ -292,7 +291,10 @@ def _call_gemini(
                 "authentication_error",
             )
 
-        if "quota" in error_text or "resource_exhausted" in error_text:
+        if (
+            "quota" in error_text
+            or "resource_exhausted" in error_text
+        ):
             return llm_error_response(
                 "The Gemini API quota is unavailable or exhausted.",
                 "quota_error",
@@ -327,6 +329,7 @@ def _call_openai(
 ) -> dict[str, Any]:
     """Send crafted messages to OpenAI and return parsed JSON."""
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
+
     model = os.getenv(
         "OPENAI_MODEL",
         os.getenv("LLM_MODEL", DEFAULT_OPENAI_MODEL),
