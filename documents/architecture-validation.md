@@ -64,11 +64,17 @@ flowchart TD
     R -->|"21 status → UI"| A
 ```
 
+
+
+
+
 # Code component
 
 Modules from the diagram. Each is a callable with params → return. Request-stream modules are implemented; action-stream modules are planned.
 
 ## Shared / router
+
+
 
 ### User interface
 
@@ -78,6 +84,8 @@ Modules from the diagram. Each is a callable with params → return. Request-str
 - **params (decide):** `request_id: str`, `decision: "approve" | "reject" | "edit"`, `path_id: str | None` (required for approve)
 - **return:** renders draft response; then decision `status` + `results` (e.g. `"stop_instance has been accomplished for i-…"`)
 
+
+
 ### Router
 
 - **File:** `app.py`
@@ -86,6 +94,8 @@ Modules from the diagram. Each is a callable with params → return. Request-str
 - **params:** request JSON bodies as above
 - **return:** JSON to UI (does not run LLM inside `/decide`)
 
+
+
 ### Pipeline log
 
 - **File:** `modules/pipeline_log.py`
@@ -93,7 +103,11 @@ Modules from the diagram. Each is a callable with params → return. Request-str
 - **params:** `request_id`, `component`, `phase`, optional `detail` / `data`
 - **return:** in-memory traces for `/logs`
 
+
+
 ## Request stream (draft only)
+
+
 
 ### Request orchestrator
 
@@ -102,6 +116,8 @@ Modules from the diagram. Each is a callable with params → return. Request-str
 - **params:** `message: str`, `request_id: str | None`
 - **return:** `{ request_id, readable_response, model_response, pii_warning, paths, … }`
 
+
+
 ### String breakdown
 
 - **File:** `modules/string_breakdown.py`
@@ -109,13 +125,17 @@ Modules from the diagram. Each is a callable with params → return. Request-str
 - **params:** `text: str`
 - **return:** `words: list[str]`
 
+
+
 ### Filter and request module
 
 - **File:** `modules/request_filter.py`
 - **Role:** match words against `runbook/metadata.json`; extract the embedded `path` from each matched record
 - **params:** `words: list[str]`
 - **return:** `paths: list[str]`  
-  (example: `["runbook/idle-ec2.md", "runbook/cost-optimization.md"]`)
+(example: `["runbook/idle-ec2.md", "runbook/cost-optimization.md"]`)
+
+
 
 ### AWS service ingestor
 
@@ -124,12 +144,16 @@ Modules from the diagram. Each is a callable with params → return. Request-str
 - **params:** `source: str` (optional path; default `samples/ec2-cloudwatch.json`)
 - **return:** `ec2_text: str`
 
+
+
 ### EC2 data processor
 
 - **File:** `modules/ec2_processor.py`
 - **Role:** call ingestor; for now pass text through (filtering by hint later)
 - **params:** `request_hint: str` (optional; unused in current pass-through)
 - **return:** `ec2_text: str`
+
+
 
 ### Prompt crafting module
 
@@ -141,13 +165,17 @@ Modules from the diagram. Each is a callable with params → return. Request-str
   - `ec2_records: str` (EC2 text document)
 - **return:** chat messages `list[{ role, content }]`
 
+
+
 ### LLM server
 
 - **File:** `modules/llm_server.py`
 - **Role:** model inference (mock and/or live API)
 - **params:** `prompt` as chat messages (via `call_llm` / `generate_recommendations`)
 - **return:** `model_response_json: dict`  
-  (summary + up to 3 paths with steps, risk, pros/cons, evidence, `mock_action`)
+(summary + up to 3 paths with steps, risk, pros/cons, evidence, `mock_action`)
+
+
 
 ### Json handler
 
@@ -155,6 +183,8 @@ Modules from the diagram. Each is a callable with params → return. Request-str
 - **Role:** validate/parse model JSON; enforce allowlisted / blocked actions; UI-ready text + structure
 - **params:** `model_response_json: dict | str`
 - **return:** `readable_response: str` (+ full structure via `handle_model_response` / `model_response` in API)
+
+
 
 ### Draft store
 
@@ -165,7 +195,11 @@ Modules from the diagram. Each is a callable with params → return. Request-str
 - **return:** stored `model_response: dict` or `None`
 - **Note:** in-memory dict is enough for the hackathon
 
+
+
 ## Action stream (no LLM re-entry)
+
+
 
 ### Decision / action handler
 
@@ -177,6 +211,8 @@ Modules from the diagram. Each is a callable with params → return. Request-str
   - `path_id: str | None` (required when `decision == "approve"`)
 - **return:** `{ status: "executed" | "rejected" | "edit_requested" | "blocked" | "not_found" | "not_implemented", results: list[str], message: str, … }`
 
+
+
 ### Mock executor
 
 - **File:** `modules/mock_executor.py` (planned)
@@ -184,6 +220,8 @@ Modules from the diagram. Each is a callable with params → return. Request-str
 - **params:** `action: str`, `instance_id: str | None`
 - **return:** `results: list[str]` (e.g. `["stop_instance has been accomplished for i-0abc"]`)
 - **Note:** unknown / blocked actions refuse; called only after approve
+
+
 
 # Checklist
 
@@ -225,29 +263,29 @@ Human-in-the-Loop AI Assistant — AI drafts or recommends; the **application** 
 
 - [x] **2. AI draft** — generate a recommendation / draft **without** finalizing the action.
 
-- [ ] **3. Human review** — approve, edit, or reject before finalization (UI + backend gate; a prompt that says “ask first” is **not** enough).
+- [x] **3. Human review** — approve, edit, or reject before finalization (UI + backend gate; a prompt that says “ask first” is **not** enough).
 
 - [x] **4. Action log** — record what the system generated and what the user decided.
 
 **Minimum deliverable**
 
-- [ ] User enters a task or uploads notes/text.
+- [x] User enters a task or uploads notes/text.
 
-- [ ] AI generates a draft or recommendation.
+- [x] AI generates a draft or recommendation.
 
-- [ ] User can approve, edit, or reject before finalization.
+- [x] User can approve, edit, or reject before finalization.
 
-- [ ] System keeps a simple action log.
+- [x] System keeps a simple action log.
 
-- [ ] One safety check: risk label, private-information warning, **or** blocked action.
+- [x] One safety check: risk label, private-information warning, **or** blocked action.
 
 **Optional advanced layers (stretch)**
 
-- [ ] Risk levels (low / medium / high) on proposed actions.
+- [x] Risk levels (low / medium / high) on proposed actions.
 
-- [ ] Approval rules / hard block for prohibited actions (e.g. delete production).
+- [x] Approval rules / hard block for prohibited actions (e.g. delete production).
 
-- [ ] Guardrail checks (PII, harmful content, unsupported claims).
+- [x] Guardrail checks (PII, harmful content, unsupported claims).
 
 - [ ] Undo / rollback of an approved mock action.
 
@@ -255,13 +293,17 @@ Human-in-the-Loop AI Assistant — AI drafts or recommends; the **application** 
 
 **Architecture readiness (Track 3 mapping)**
 
-| Guide expectation | Our design |
-| --- | --- |
-| User request | `POST /chat` (+ HTML chat); optional document CRUD later |
-| AI draft | Request stream → mock/live LLM → 3 paths with steps, risk, pros/cons, evidence |
-| Human review | `POST /decide` → approve / edit / reject; mock execute **only** after approve |
-| Action log | Step logs + `/logs`; must also record final human decision |
-| Safety check | PII warning done; risk labels in path schema; hard block TBD |
+
+| Guide expectation | Our design                                                                     |
+| ----------------- | ------------------------------------------------------------------------------ |
+| User request      | `POST /chat` (+ HTML chat); optional document CRUD later                       |
+| AI draft          | Request stream → mock/live LLM → 3 paths with steps, risk, pros/cons, evidence |
+| Human review      | `POST /decide` → approve / edit / reject; mock execute **only** after approve  |
+| Action log        | Step logs + `/logs`; must also record final human decision                     |
+| Safety check      | PII warning done; risk labels in path schema; hard block TBD                   |
+
+
+
 
 ## 3. Submission requirements
 
