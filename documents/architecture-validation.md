@@ -202,22 +202,20 @@ Modules from the diagram. Each is a callable with params → return. Request-str
 
 ### Decision / action handler
 
-- **File:** `modules/decision_handler.py` (`handle_decision` — placeholder; approve execute TBD)
+- **File:** `modules/decision_handler.py` (`handle_decision`)
 - **Role:** HITL gate — resolve decision against stored draft; approve → mock execute; reject/edit → log only
 - **params:**
   - `request_id: str`
   - `decision: "approve" | "reject" | "edit"`
   - `path_id: str | None` (required when `decision == "approve"`)
-- **return:** `{ status: "executed" | "rejected" | "edit_requested" | "blocked" | "not_found" | "not_implemented", results: list[str], message: str, … }`
-
-
+- **return:** `{ status: "executed" | "rejected" | "edit_requested" | "blocked" | "not_found", results: list[str], message: str, … }`
 
 ### Mock executor
 
-- **File:** `modules/mock_executor.py` (planned)
+- **File:** `modules/mock_executor.py` (`execute`)
 - **Role:** run only allowlisted actions (`stop_instance`, `start_instance`, `resize_instance`, `monitor_instance`, `no_action`); never call real AWS
 - **params:** `action: str`, `instance_id: str | None`
-- **return:** `results: list[str]` (e.g. `["stop_instance has been accomplished for i-0abc"]`)
+- **return:** `{ ok: bool, results: list[str], error?: str }`
 - **Note:** unknown / blocked actions refuse; called only after approve
 
 
