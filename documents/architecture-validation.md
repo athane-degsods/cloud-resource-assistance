@@ -81,8 +81,8 @@ Modules from the diagram. Each is a callable with params → return. Request-str
 ### Router
 
 - **File:** `app.py`
-- **Role:** HTTP entry only — route `POST /chat` → request stream, `POST /decide` → action stream; PII check on chat; expose health/logs
-- **Endpoints:** `POST /chat`, `POST /decide` (planned), `GET /`, `GET /health`, `GET /logs`, `GET /logs.json`, `GET /logs/<request_id>`
+- **Role:** HTTP entry only — route `POST /chat` → request stream, `POST /decide` → action stream; expose health/logs
+- **Endpoints:** `POST /chat`, `POST /decide`, `GET /`, `GET /health`, `GET /logs`, `GET /logs.json`, `GET /logs/<request_id>`
 - **params:** request JSON bodies as above
 - **return:** JSON to UI (does not run LLM inside `/decide`)
 
@@ -97,8 +97,8 @@ Modules from the diagram. Each is a callable with params → return. Request-str
 
 ### Request orchestrator
 
-- **File:** `app.py` (`process_request`) — may later move to `modules/request_orchestrator.py`
-- **Role:** run the draft pipeline end-to-end; store draft by `request_id`; return UI payload (no mock execute)
+- **File:** `modules/request_orchestrator.py` (`run_request_stream`)
+- **Role:** run the draft pipeline end-to-end; store draft by `request_id` (when draft_store is wired); return UI payload (no mock execute)
 - **params:** `message: str`, `request_id: str | None`
 - **return:** `{ request_id, readable_response, model_response, pii_warning, paths, … }`
 
@@ -169,13 +169,13 @@ Modules from the diagram. Each is a callable with params → return. Request-str
 
 ### Decision / action handler
 
-- **File:** `modules/decision_handler.py` (planned)
+- **File:** `modules/decision_handler.py` (`handle_decision` — placeholder; approve execute TBD)
 - **Role:** HITL gate — resolve decision against stored draft; approve → mock execute; reject/edit → log only
 - **params:**
   - `request_id: str`
   - `decision: "approve" | "reject" | "edit"`
   - `path_id: str | None` (required when `decision == "approve"`)
-- **return:** `{ status: "executed" | "rejected" | "edit_requested" | "blocked" | "not_found", results: list[str], message: str, … }`
+- **return:** `{ status: "executed" | "rejected" | "edit_requested" | "blocked" | "not_found" | "not_implemented", results: list[str], message: str, … }`
 
 ### Mock executor
 
