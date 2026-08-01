@@ -188,13 +188,12 @@ Modules from the diagram. Each is a callable with params → return. Request-str
 
 ### Draft store
 
-- **File:** `modules/draft_store.py` (planned)
+- **File:** `modules/draft_store.py` (`put` / `get` / `clear`; backed by `draft_store.json`)
 - **Role:** hold the last validated draft per chat turn so `/decide` does not trust the client for `mock_action`
 - **params:**
   - `put(request_id, model_response)` / `get(request_id)` / optional `clear(request_id)`
 - **return:** stored `model_response: dict` or `None`
-- **Note:** in-memory dict is enough for the hackathon
-
+- **Note:** request orchestrator calls `put` after json validation; action stream calls `get`
 
 
 ## Action stream (no LLM re-entry)
