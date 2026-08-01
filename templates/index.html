@@ -5,61 +5,61 @@
     <title>Cloud Assistant</title>
 
     <style>
-
-        body{
+        body {
             font-family: Arial, sans-serif;
-            margin:40px;
-            background:#f5f5f5;
+            margin: 40px;
+            background: #f5f5f5;
         }
 
-        input{
-            width:350px;
-            padding:8px;
+        #composer {
+            display: flex;
+            gap: 8px;
+            margin-top: 20px;
+            align-items: center;
         }
 
-        button{
-            padding:8px 15px;
-            margin-left:5px;
-            cursor:pointer;
+        #composer input {
+            flex: 1;
+            max-width: 480px;
+            padding: 8px;
         }
 
-        #recommendations{
-            margin-top:20px;
+        button {
+            padding: 8px 15px;
+            cursor: pointer;
         }
 
-        .card{
-
-            background:white;
-
-            border:1px solid #ddd;
-
-            border-radius:8px;
-
-            padding:15px;
-
-            margin-bottom:15px;
-
+        #recommendations {
+            margin-top: 20px;
         }
 
-        .risk{
-            font-weight:bold;
-            color:#c67c00;
+        .card {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
         }
 
-        #log{
-
-            margin-top:20px;
-
-            background:white;
-
-            border:1px solid #ddd;
-
-            padding:15px;
-
-            border-radius:8px;
-
+        .risk {
+            font-weight: bold;
+            color: #c67c00;
         }
 
+        #log {
+            margin-top: 12px;
+            min-height: 80px;
+            background: white;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .decision {
+            border-left: 4px solid #2e7d32;
+            padding-left: 10px;
+            margin: 12px 0;
+        }
     </style>
 
 </head>
@@ -68,29 +68,22 @@
 
 <h2>Cloud Resource Assistant</h2>
 
-<input
-    type="text"
-    id="message"
-    placeholder="Enter your cloud request"
-/>
-
-<button id="sendBtn">
-    Send
-</button>
-
-<hr>
-
-<h3>Conversation Log</h3>
-
+<h3>Conversation</h3>
 <div id="log"></div>
 
-<hr>
-
 <h3>AI Recommendations</h3>
-
 <div id="recommendations"></div>
 
-<script src="{{ url_for('static', filename='script.js') }}"></script>
+<div id="composer">
+    <input
+        type="text"
+        id="message"
+        placeholder="Enter your cloud request"
+    />
+    <button id="sendBtn" type="button">Send</button>
+</div>
+
+<script src="{{ url_for('static', filename='script.js') }}?v=5"></script>
 
 </body>
 

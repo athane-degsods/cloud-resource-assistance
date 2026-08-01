@@ -3,7 +3,7 @@ Router — Flask HTTP entry for the cloud resource assistant.
 
 Routes:
   POST /chat   → request stream (draft only)
-  POST /decide → action stream (HITL; placeholder until executor/store land)
+  POST /decide → action stream (HITL approve | reject | edit)
 """
 
 from __future__ import annotations
@@ -68,9 +68,12 @@ def decide():
 
     result = handle_decision(request_id, decision, path_id=path_id)
     status = result.get("status")
-    http_status = 501 if status == "not_implemented" else 200
-    if status in {"blocked"}:
-        http_status = 400
+    if status == "not_found":
+        http_status = 404
+    elif status in {"blocked", "not_implemented"}:
+        http_status = 400 if status == "blocked" else 501
+    else:
+        http_status = 200
     return jsonify(result), http_status
 
 
