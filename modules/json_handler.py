@@ -201,15 +201,19 @@ def handle_model_response(
     status = parsed.get("status")
 
     error_statuses = {
-        "llm_error",
-        "configuration_error",
-        "authentication_error",
-        "timeout_error",
-        "connection_error",
-        "api_error",
-        "invalid_json",
-        "validation_error",
-    }
+    "llm_error",
+    "configuration_error",
+    "authentication_error",
+    "timeout_error",
+    "connection_error",
+    "api_error",
+    "invalid_json",
+    "validation_error",
+    "quota_error",
+    "rate_limit_error",
+    "empty_response",
+    "model_error",
+}
 
     if status in error_statuses:
         return safe_response(
