@@ -21,7 +21,7 @@ DEFAULT_MODEL = "gpt-4.1-mini"
 
 # Keep this True to run without paid OpenAI API usage.
 # Change it to False later when API billing is available.
-USE_MOCK_LLM = False
+USE_MOCK_LLM = True
 
 
 def llm_error_response(
