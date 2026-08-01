@@ -1,1 +1,1 @@
-# Downstream modules — each file is a callable stub for teammates to fill in.
+# Downstream modules for the request and action streams.
