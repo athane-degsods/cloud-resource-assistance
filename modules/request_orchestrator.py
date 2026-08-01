@@ -10,9 +10,9 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from modules import pipeline_log
+from modules import draft_store, pipeline_log
 from modules.ec2_processor import process_ec2
-from modules.json_handler import handle_json
+from modules.json_handler import handle_model_response
 from modules.llm_server import call_llm
 from modules.prompt_crafter import craft_prompt
 from modules.request_filter import filter_and_request
@@ -110,23 +110,43 @@ def run_request_stream(
             },
         )
 
-        readable = handle_json(model_json)
+        model_response = handle_model_response(model_json)
+        readable = str(model_response.get("summary", model_response))
         pipeline_log.step(
             rid,
             "json_handler",
             "exit",
-            detail=f"readable_len={len(readable)}",
-            data={"readable_len": len(readable)},
+            detail=(
+                f"status={model_response.get('status')} "
+                f"readable_len={len(readable)}"
+            ),
+            data={
+                "status": model_response.get("status"),
+                "readable_len": len(readable),
+                "path_count": len(model_response.get("paths") or []),
+            },
         )
 
-        # Draft store put() will be wired here once modules/draft_store.py exists.
+        draft_store.put(rid, model_response)
+        pipeline_log.step(
+            rid,
+            "draft_store",
+            "exit",
+            detail=f"stored request_id={rid}",
+            data={
+                "request_id": rid,
+                "status": model_response.get("status"),
+                "path_count": len(model_response.get("paths") or []),
+            },
+        )
+
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         pipeline_log.finish(rid, status="ok", duration_ms=elapsed_ms)
 
         return {
             "request_id": rid,
             "readable_response": readable,
-            "model_response": model_json,
+            "model_response": model_response,
             "pii_warning": warning,
             "words": words,
             "paths": documents,
