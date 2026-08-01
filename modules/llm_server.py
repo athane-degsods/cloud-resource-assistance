@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from typing import Any
 
 from dotenv import load_dotenv
@@ -23,6 +24,31 @@ DEFAULT_MODEL = "gpt-4.1-mini"
 # Change it to False later when API billing is available.
 USE_MOCK_LLM = True
 
+# App-level approval policy on the LLM route (mock and live).
+# Catches prohibited user intent before recommendations are produced.
+_PROHIBITED_REQUEST_RULES: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(r"\bdelete\s+production\b", re.I),
+        "delete production",
+    ),
+    (
+        re.compile(r"\bterminate\s+production\b", re.I),
+        "terminate production",
+    ),
+    (
+        re.compile(r"\bdestroy\s+production\b", re.I),
+        "destroy production",
+    ),
+    (
+        re.compile(r"\b(delete|terminate|destroy)\b.*\bprod(uction)?\b", re.I),
+        "destructive production change",
+    ),
+    (
+        re.compile(r"\bwipe\s+(prod(uction)?|all)\b", re.I),
+        "wipe production / wipe all",
+    ),
+]
+
 
 def llm_error_response(
     message: str,
@@ -37,6 +63,51 @@ def llm_error_response(
         "privacy_warning": None,
         "paths": [],
         "requires_human_review": True,
+    }
+
+
+def _extract_user_text(messages: list[dict[str, str]]) -> str:
+    """Pull plain user text from chat messages (including craft_prompt JSON)."""
+    parts: list[str] = []
+    for message in messages:
+        if message.get("role") != "user":
+            continue
+        content = message.get("content") or ""
+        parts.append(content)
+        try:
+            payload = json.loads(content)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            request = payload.get("user_request")
+            if request:
+                parts.append(str(request))
+    return "\n".join(parts)
+
+
+def _prohibited_rule(user_text: str) -> str | None:
+    """Return the matched policy rule label, or None if allowed."""
+    if not user_text:
+        return None
+    for pattern, label in _PROHIBITED_REQUEST_RULES:
+        if pattern.search(user_text):
+            return label
+    return None
+
+
+def blocked_policy_response(rule: str) -> dict[str, Any]:
+    """Hard-block response for prohibited cloud actions (e.g. delete production)."""
+    return {
+        "status": "blocked",
+        "summary": (
+            "Request blocked by approval policy: "
+            f"prohibited action ({rule}). "
+            "Destructive production changes are not allowed."
+        ),
+        "privacy_warning": None,
+        "requires_human_review": True,
+        "blocked_reason": f"Prohibited request matched policy rule: {rule}",
+        "paths": [],
     }
 
 
@@ -184,6 +255,12 @@ def generate_recommendations(
             "No messages were supplied to the LLM.",
             "validation_error",
         )
+
+    user_text = _extract_user_text(messages)
+    prohibited = _prohibited_rule(user_text)
+    if prohibited:
+        logger.warning("Blocked prohibited request on LLM route: %s", prohibited)
+        return blocked_policy_response(prohibited)
 
     if USE_MOCK_LLM:
         logger.info("Using mock LLM response")
